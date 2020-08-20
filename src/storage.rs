@@ -33,6 +33,34 @@ impl fmt::Display for State{
     }
 }
 
+pub trait ConvertEnum {
+    type Item;
+    type Item2;
+    fn convert_to_state(&self) -> Self::Item; 
+    fn convert_to_priority(&self) -> Self::Item2; 
+}
+
+impl ConvertEnum for String {
+    type Item = State;
+    fn convert_to_state(&self) -> Self::Item {
+        match &self[..] {
+            "Completed" => State::Completed,
+            "OnBoard" => State::OnBoard,
+            "Discarded" => State::Discarded,
+            _ => State::Discarded,
+        }
+    }
+    type Item2 = Priority;
+    fn convert_to_priority(&self) -> Self::Item2{
+        match &self[..] {
+            "Keter" => Priority::Keter,
+            "Safe" => Priority::Safe,
+            "Euclid" => Priority::Euclid,
+            _ => Priority::Safe,
+        }
+    }
+
+}
 pub struct Entry {
     pub text: String,
     pub state: State,
@@ -40,7 +68,7 @@ pub struct Entry {
 }
 
 pub struct Journal {
-    pub entries: Vec<Entry>,
+    pub entries: Vec<(i32,Entry)>,
 }
 
 fn find_state(state: String) -> State {
@@ -82,6 +110,15 @@ pub fn add_entry(conn: &Connection, msg: String, priority: String){
 
 }
 
+pub fn delete_entry(conn: &Connection, proc_id: u32) -> bool{
+    let query = format!("DELETE FROM Journal WHERE id = {};", proc_id);
+    match conn.execute(&query[..], params![])
+      {
+            Ok(n) => n>0,
+            Err(_) => panic!("Fatal Error: query failed"),
+        }
+
+}
 
 
 pub fn load_journal(conn: &Connection) -> Journal {
@@ -90,11 +127,13 @@ pub fn load_journal(conn: &Connection) -> Journal {
         .unwrap();
     let journal_iter = stmt
         .query_map(params![], |row| {
-            Ok(Entry {
+            Ok(
+            (row.get(0)?, 
+            Entry {
                 text: row.get(1)?,
                 state: find_state(row.get(2).unwrap_or("Completed".to_string())),
                 priority: find_priority(row.get(3).unwrap_or("Safe".to_string())),
-            })
+            }))
         })
         .unwrap();
 

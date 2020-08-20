@@ -1,6 +1,9 @@
 use colored::*;
 use rusqlite::{params, Connection, Result};
-use std::env;
+//use std::env;
+
+use clap::{App, Arg};
+//use crate::storage::ConvertEnum;
 
 mod storage;
 /*
@@ -16,7 +19,7 @@ struct Entry {
     bullet add -m "Kill the old gods" -p keter -> add new entry state is by default OnBoard
     bullet delete 5 -> kill entry with procedure id 5
     bullet discard 5 -> discard entry with procedure id 5
-    bullet update 5 completed -> update the procedure 5 to complete
+    bullet update 5 completed -> update the procedure 5 to complete // might be more complicated
     bullet migrate -> remove the completed, discarded and safe entries. Start the new circle
 
 
@@ -34,42 +37,114 @@ enum Operations {
 
 fn list_bullets(conn: &Connection) {
     let journal: storage::Journal = storage::load_journal(conn);
-    for entry in journal.entries{
-        let msg= entry.text.blue();
+    for (id, entry) in journal.entries{
         let priority = entry.priority.to_string().yellow();
-        let state= entry.state.to_string().bright_green();
-        println!("[{}]/[{}] - {}", state, priority, msg);
+        let state;
+        if entry.state.to_string() == "Discarded"{
+            state= entry.state.to_string().truecolor(128,128,128);
+        } else {
+            state= entry.state.to_string().bright_green();
+
+        }
+        let msg;
+        if entry.priority.to_string() == "Keter"{
+            msg= entry.text.bright_red();
+        } else {
+            msg= entry.text.bright_blue();
+
+        }
+        println!("PROC-{} [{}]/[{}] \n\t {}\n", id, state, priority, msg);
     } 
 }
-fn add_bullet(conn: &Connection, args: &[String]){
-    if args[1].eq("-m") && args[3].eq("-p") {
-        storage::add_entry(&conn, args[2].to_string(), args[4].to_string());
-        return 
-    } 
-    panic!("Args fucked up");
+fn add_bullet(conn: &Connection, msg: &str, priority: &str){
+    storage::add_entry(&conn, msg.to_string(), priority.to_string());
 }
-fn delete_bullet(){}
+fn delete_bullet(conn: &Connection, proc_id: u32){
+    if storage::delete_entry(conn, proc_id){
+        println!("Deleted succesfuly.");
+    }
+    else{
+        println!("Entry not found!");
+    }
+}
+/*
 fn discard_bullet(){}
 fn update_bullet(){}
 fn migrate(){}
+*/
 
 
 
 fn main() -> Result<()> {
-    let args: Vec<String> = env::args().collect();
-    println!("Args: {:?}", args);
-    let conn = storage::init();
 
+   // let args: Vec<String> = env::args().collect();
+    let conn = storage::init();
+    let matches = App::new("Bullet")
+        .version("1.0")
+        .author("Furkan A. <aksoyfurkan45@gmail.com>")
+        .about("Simple bullet list")
+        .arg( Arg::new("head").about("Prints console header").takes_value(false).long("--head"))
+        .subcommand(
+            App::new("list")
+                    .about("List current bullets"))
+        .subcommand(App::new("add")
+                .about("Add new bullet to the list")
+                .arg(Arg::with_name("text")
+                    .short('t')
+                    .takes_value(true)
+                    .about("Takes Bullet entry").required(true))
+                .arg(Arg::with_name("priority")
+                    .short('p')
+                    .takes_value(true)
+                    .about("Takes Bullet priority")))       
+        .subcommand(App::new("delete")
+                .about("Delete bullet from the list")
+                .arg(Arg::new("id")
+                    .takes_value(true)
+                    .about("Id of bullet to delete").required(true)))
+        .subcommand(App::new("discard")
+                .about("Discard bullet from the list")
+                .arg(Arg::new("id")
+                    .takes_value(true)
+                    .about("Id of bullet to discard").required(true)))  
+        .subcommand(App::new("migrate")
+                .about("Apply migration to the list and start a new 'sprint'. Discards all completed, safe, and discarded elements")
+                .arg(Arg::new("id")
+                    .takes_value(true)
+                    .about("Id of bullet to discard").required(true)))            
+        .get_matches();
+    /*
     match &args[1][..] {
         "list" => list_bullets(&conn),
         "add" => add_bullet(&conn, &args[1..]),
-        /*"delete" => ,
-        "discard" => ,
+        "delete" => delete_bullet(&conn, args[2].to_string().parse::<u32>().unwrap()),
+        /*"discard" => ,
         "update" => ,
         "migrate" => ,*/
-        n => panic!("Argument {} is not reconized",n)
+        n => println!("Argument {} is not reconized",n)
     }
-
+    */
+    match matches.subcommand() {
+        ("list",Some(_)) => list_bullets(&conn),
+        ("add", Some(add_matches)) => 
+            add_bullet(&conn, 
+                add_matches.value_of("text").unwrap(),
+                add_matches.value_of("priority").unwrap_or("Euclid") ),
+        ("delete", Some( delete_matches)) => 
+            delete_bullet(&conn, delete_matches.value_of("id")
+                .unwrap()
+                .to_string()
+                .parse::<u32>()
+                .expect("Err: Not a valid number")),
+        ("discard", Some( discard_matches)) =>println!("Discarded {}", discard_matches.value_of("id").unwrap()) , 
+        ("update", Some( _update_matches)) =>  println!("Updated") ,
+        ("migrate", Some( _migrate_matches)) =>println!("Migrated") , 
+        
+        (t, _) => println!("None {}::", t)
+        /*"discard" => ,
+        "update" => ,
+        "migrate" => ,*/
+    }
 
 
     /* let entry =Entry{

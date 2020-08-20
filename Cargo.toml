@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 colored = "2.0.0"
-
+clap = "3.0.0-beta.1"
 
 [dependencies.rusqlite]
 version = "0.21.0"
