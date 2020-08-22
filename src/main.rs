@@ -15,14 +15,14 @@ struct Entry {
 }*/
 
 /*
-    bullet --head  -> displays shell header
-    bullet list -> list current bullets (with priority and state)
-    bullet add -m "Kill the old gods" -p keter -> add new entry state is by default OnBoard
-    bullet delete 5 -> kill entry with procedure id 5
-    bullet discard 5 -> discard entry with procedure id 5
-    bullet complete 5
-    bullet onboard 5
-    bullet priority 5 euclid
+    * bullet --head  -> displays shell header
+    * bullet list -> list current bullets (with priority and state)
+    * bullet add -m "Kill the old gods" -p keter -> add new entry state is by default OnBoard
+    * bullet delete 5 -> kill entry with procedure id 5
+    * bullet discard 5 -> discard entry with procedure id 5
+    * bullet complete 5
+    * bullet onboard 5
+    * bullet priority 5 euclid
     bullet migrate -> remove the completed, discarded and safe entries. Start the new circle
 
 
@@ -40,9 +40,9 @@ enum Operations {
 }
 */
 
-fn list_bullets(conn: &Connection) {
-    let journal: storage::Journal = storage::load_journal(conn);
-    for (id, entry) in journal.entries {
+fn list_bullets(conn: &Connection, id: u32) {
+    let journal = storage::load_journal(conn, id);
+    for (id, entry) in journal {
         let priority = entry.priority.to_string().yellow();
         let state;
         if entry.state.to_string().to_lowercase() == "discarded" {
@@ -60,8 +60,8 @@ fn list_bullets(conn: &Connection) {
     }
 }
 
-fn add_bullet(conn: &Connection, msg: &str, priority: &str) {
-    storage::add_entry(&conn, msg.to_string(), priority.to_string());
+fn add_bullet(conn: &Connection, msg: &str, priority: &str, id:u32) {
+    storage::add_entry(&conn, msg.to_string(), priority.to_string(), id);
 }
 
 fn delete_bullet(conn: &Connection, proc_id: u32) {
@@ -78,7 +78,7 @@ fn migrate(){}
 
 fn main() -> Result<()> {
     // let args: Vec<String> = env::args().collect();
-    let conn = storage::init();
+    let (conn, mut migration_id) = storage::init_connection();
     let matches = App::new("Bullet")
         .version("1.0")
         .author("Furkan A. <aksoyfurkan45@gmail.com>")
@@ -117,15 +117,11 @@ fn main() -> Result<()> {
                 .arg(Arg::new("id")
                     .takes_value(true)
                     .about("Id of bullet to activate").required(true)))  
-        .subcommand(App::new("migrate")
-                .about("Apply migration to the list and start a new 'sprint'. Discards all completed, safe, and discarded elements")
-                .arg(Arg::new("id")
-                    .takes_value(true)
-                    .about("Id of bullet to discard").required(true)))            
+        .subcommand(App::new("migrate").about("Start new spring"))    
         .get_matches();
 
     if matches.is_present("head") {
-        let (normal, keter) = storage::metadata(&conn);
+        let (normal, keter) = storage::get_header_contents(&conn, migration_id);
         let bullets = format!("💎 [{} bullets]", normal).bright_blue();
         let keter = format!("🔥 {} is keter", keter).yellow();
         println!(r#"{} - {}"#, bullets, keter);
@@ -133,11 +129,12 @@ fn main() -> Result<()> {
     }
 
     match matches.subcommand() {
-        ("list", Some(_)) => list_bullets(&conn),
+        ("list", Some(_)) => list_bullets(&conn, migration_id),
         ("add", Some(add_matches)) => add_bullet(
             &conn,
             add_matches.value_of("text").unwrap(),
             add_matches.value_of("priority").unwrap_or("Euclid"),
+            migration_id
         ),
         ("delete", Some(delete_matches)) => delete_bullet(
             &conn,
@@ -173,7 +170,10 @@ fn main() -> Result<()> {
             println!("Activated {}", id.value_of("id").unwrap())
         }
         ("update", Some(_update_matches)) => println!("Updated"),
-        ("migrate", Some(_migrate_matches)) => println!("Migrated"),
+        ("migrate", Some(_migrate_matches)) => {
+            migration_id = storage::migrate(&conn, migration_id);
+            println!("Migration {} active", migration_id);
+        },
 
         (t, _) => println!("None {}::", t), /*"discard" => ,
                                             "update" => ,

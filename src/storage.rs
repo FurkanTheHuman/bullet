@@ -1,11 +1,20 @@
 use rusqlite::{params, Connection, Error};
 use std::fmt;
+//use base64;
 
 pub enum Priority {
     Safe,
     Euclid,
     Keter,
 }
+
+pub enum State {
+    Completed,
+    OnBoard,
+    Discarded,
+}
+
+// this two Displays are for so that I can transform enum's to strings
 impl fmt::Display for Priority {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self {
@@ -16,11 +25,6 @@ impl fmt::Display for Priority {
     }
 }
 
-pub enum State {
-    Completed,
-    OnBoard,
-    Discarded,
-}
 impl fmt::Display for State {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self {
@@ -30,7 +34,7 @@ impl fmt::Display for State {
         }
     }
 }
-
+// this trait is for turning strings into enums back
 pub trait ConvertEnum {
     type Item;
     type Item2;
@@ -58,71 +62,151 @@ impl ConvertEnum for String {
         }
     }
 }
+
 pub struct Entry {
     pub text: String,
     pub state: State,
     pub priority: Priority,
 }
 
-pub struct Journal {
-    pub entries: Vec<(i32, Entry)>,
+/*
+    
+    migrations done but now we can not revert them!!
+    this is the last thing. 
+    after than version one can be released.
+
+*/
+
+// it is ensured that vec will always be bigger that len 0. See get_last_migration_id
+fn find_latest(n: Vec<u32>) -> u32{
+    let mut number = 0;
+    for i in n{
+        if number < i{
+            number = i;
+        }
+    }
+    number
 }
 
-pub fn init() -> Connection {
-    let connection = Connection::open("bullet.sql").unwrap();
+fn get_last_migration_id(conn: &Connection) -> Result<u32, rusqlite::Error>{
+    let selection = conn.prepare("SELECT migration_count FROM metadata;");
+    let mut id: Vec<u32> = Vec::new();
+    match selection {
+        Ok(mut rows) => {
+            let mut q = rows.query(params![]).unwrap();
+            while let Some(n) =q.next().unwrap() {
+                id.push(n.get(0).unwrap());
+            }
+            if id.len() < 1{
+                Err(Error::QueryReturnedNoRows)
+            } else {
+                Ok(find_latest(id))
+            }
+        },
+        Err(n) => panic!(format!("PANIC: Unresolved DB problems! -- {}", n))
+
+    }
+
+}
+
+fn prepare_migrations(conn: &Connection) -> u32{
+    conn.execute("INSERT INTO metadata (migration_count) VALUES (?1)", params![0]).unwrap();
+    0
+}
+
+pub fn init_connection() -> (Connection, u32) {
+    let connection = Connection::open("/home/foucault/.config/bullet.sql").unwrap();
     connection
         .execute(
-            "create table if not exists Journal (
-        id integer primary key,
-        text text not null, 
-        state text not null,
-        priority text not null
+            "CREATE TABLE IF NOT EXISTS journal (
+        id INTEGER PRIMARY KEY,
+        text TEXT NOT NULL, 
+        state TEXT NOT NULL,
+        priority TEXT NOT NULL,
+        migration INTEGER NOT NULL,
+        migrated_at DEFAULT CURRENT_TIMESTAMP
         )",
             params![],
         )
         .expect("Err: Cannot create or connect to db.");
 
-    connection
+        //contains last migration date, migration count
+        connection
+        .execute(
+            "CREATE TABLE IF NOT EXISTS metadata (
+        id INTEGER PRIMARY KEY,
+        migration_date DEFAULT CURRENT_TIMESTAMP,
+        migration_count INTEGER NOT NULL
+        )",
+            params![],
+        )
+        .expect("Err: Cannot create or connect to db.");
+
+        let id = get_last_migration_id(&connection);
+        let id = match id {
+            Ok(n) => n,
+            Err(_) => prepare_migrations(&connection)
+        };
+
+        (connection, id)
 }
 
-pub fn metadata(conn: &Connection) -> (u32, u32) {
-    /*    struct Tmp {
-        name :String
-    }
-    let mut q = conn.prepare("SELECT priority FROM Journal").unwrap();
-    //MappedRows<|&Row| -> Result<String, Error>>
-    let p_iter = q.query_map(params![], |row| {
-        Ok(Tmp{
-            name : row.get(0).unwrap()
-        })
-    }).unwrap();
-    */
-    // TODO: This is a better aproach
-    let mut x = conn.prepare("SELECT priority FROM Journal").unwrap();
+
+
+
+pub fn get_header_contents(conn: &Connection, migration_id: u32) -> (u32, u32) {
+    let mut x = conn.prepare("SELECT priority, migration FROM Journal").unwrap();
     let mut rows = x.query(params![]).unwrap();
 
-    let mut names: Vec<String> = Vec::new();
+    let mut names: Vec<(String, u32)> = Vec::new();
     while let Some(row) = rows.next().unwrap() {
-        names.push(row.get(0).unwrap());
+        names.push((row.get(0).unwrap(),row.get(1).unwrap()));
     }
 
     let mut general_count = 0;
     let mut prior_count = 0;
 
-    for c in names {
-        general_count = general_count + 1;
-        if c.to_lowercase().trim() == "keter" {
+    for (p, id) in names {
+        if id == migration_id {
+            general_count = general_count + 1;
+        }
+        if p.to_lowercase().trim() == "keter" && id == migration_id{
             prior_count = prior_count + 1;
         }
     }
     (general_count, prior_count)
 }
 
-pub fn add_entry(conn: &Connection, msg: String, priority: String) {
+fn is_okay_for_new_migration(entry: &Entry) -> bool{
+    //but when run migrate based on safe, discarded and completed
+    if entry.priority.to_string().to_lowercase() == "safe"{
+        return false
+    } 
+    if entry.state.to_string().to_lowercase() == "completed" || entry.state.to_string().to_lowercase() == "discarded"{
+        return false
+    } 
+    true    
+}
+
+pub fn migrate(conn: &Connection, id: u32) -> u32{
+    let current = load_journal(conn, id);
+    let mut counter = 0;
+    conn.execute("INSERT INTO metadata (migration_count) VALUES (?1)", params![id+1]).unwrap();
+    for (primary_id, entry) in &current{
+        if is_okay_for_new_migration(entry){
+            conn.execute("UPDATE Journal SET migration=(?1) WHERE id=(?2);", params![id+1, primary_id]).unwrap();
+            counter = counter +1;
+        }
+    }
+    println!("Migrated {} elements", counter);
+    id+1
+}
+
+pub fn add_entry(conn: &Connection, msg: String, priority: String, id: u32) {
     if let Some(_n) = priority.convert_to_priority() {
         conn.execute(
-            "INSERT INTO Journal (text, state, priority) VALUES (?1, ?2 ,?3)",
-            params![msg, "OnBoard", priority],
+            "INSERT INTO Journal (text, state, priority, migration) VALUES (?1, ?2 ,?3, ?4)",
+            params![msg, "OnBoard", priority, id],
         )
         .expect("Error writing to DB");
         return;
@@ -148,9 +232,9 @@ pub fn change_state(conn: &Connection, state: State, proc_id: u32) {
     conn.execute(&query[..], params![]).unwrap();
 }
 
-pub fn load_journal(conn: &Connection) -> Journal {
+pub fn load_journal(conn: &Connection, migration_id: u32) -> Vec<(u32, Entry)> {
     let mut stmt = conn
-        .prepare("SELECT id, text, state, priority FROM Journal")
+        .prepare(&format!("SELECT id, text, state, priority FROM Journal WHERE migration={}", migration_id)[..])
         .unwrap();
     let journal_iter = stmt
         .query_map(params![], |row| {
@@ -179,9 +263,9 @@ pub fn load_journal(conn: &Connection) -> Journal {
         })
         .unwrap();
 
-    let mut journal: Journal = Journal { entries: vec![] };
+    let mut journal =  vec![];
     for entry in journal_iter {
-        journal.entries.push(entry.unwrap());
+        journal.push(entry.unwrap());
     }
     journal
 }
