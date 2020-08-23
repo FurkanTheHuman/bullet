@@ -93,9 +93,7 @@ fn delete_bullet(conn: &Connection, proc_id: u32) {
     }
 }
 
-/*
-fn migrate(){}
-*/
+
 
 fn main() -> Result<()> {
     // let args: Vec<String> = env::args().collect();
@@ -139,7 +137,12 @@ fn main() -> Result<()> {
                 .arg(Arg::new("id")
                     .takes_value(true)
                     .about("Id of bullet to activate").required(true)))  
-        .subcommand(App::new("migrate").about("Start new spring"))    
+        .subcommand(App::new("migrate")
+                .about("Start new spring")
+                .arg(Arg::new("revert")
+                    .long("revert")
+                    .takes_value(false)
+                    .about("Revert migration to previous state")))    
         .get_matches();
 
     if matches.is_present("head") {
@@ -152,7 +155,7 @@ fn main() -> Result<()> {
 
 
     if matches.is_present("all") {
-        let data = storage::print_all(&conn);
+        let data = storage::get_all(&conn);
         list_all_bullets( data);
         exit(0);
     }
@@ -199,9 +202,20 @@ fn main() -> Result<()> {
             println!("Activated {}", id.value_of("id").unwrap())
         }
         ("update", Some(_update_matches)) => println!("Updated"),
-        ("migrate", Some(_migrate_matches)) => {
-            migration_id = storage::migrate(&conn, migration_id);
-            println!("Migration {} active", migration_id);
+        ("migrate", Some(migrate_matches)) => {
+            if migrate_matches.is_present("revert"){
+                match storage::revert_migration(&conn, migration_id) {
+                    Ok(n) => {
+                        println!("Migration reverted. {} rows effected", n);
+                        println!("MIGRATION-{} is active", migration_id-1);
+                },
+                    Err(_) => println!("Already on first migration. Nothing to revert")
+                }
+            } else {
+                migration_id = storage::migrate(&conn, migration_id);
+                println!("MIGRATION-{} is active", migration_id);
+            }
+            
         },
 
         (_, _) => list_bullets(&conn, migration_id), 

@@ -198,8 +198,20 @@ pub fn migrate(conn: &Connection, id: u32) -> u32{
             counter = counter +1;
         }
     }
+    
     println!("Migrated {} elements", counter);
     id+1
+}
+
+pub fn revert_migration(conn: &Connection, migration_id: u32) -> Result<usize, Error> {
+    if migration_id < 1 {
+        Err(Error::InvalidQuery)
+    } else {
+        conn.execute("DELETE FROM metadata WHERE migration_count =(?1);", params![migration_id]).unwrap();
+        Ok(conn.execute("UPDATE Journal SET migration=(?1) WHERE migration=(?2);", params![migration_id-1, migration_id]).unwrap())
+
+    }
+
 }
 
 pub fn add_entry(conn: &Connection, msg: String, priority: String, id: u32) -> bool {
@@ -232,7 +244,7 @@ pub fn change_state(conn: &Connection, state: State, proc_id: u32) {
     conn.execute(&query[..], params![]).unwrap();
 }
 
-pub fn print_all(conn: &Connection) -> Vec<(u32, Entry)> {
+pub fn get_all(conn: &Connection) -> Vec<(u32, Entry)> {
     let mut stmt = conn.prepare("SELECT id, text, state, priority FROM Journal ORDER BY id DESC").unwrap();
     let mut rows = stmt.query(params![]).unwrap();
 
@@ -252,12 +264,7 @@ pub fn print_all(conn: &Connection) -> Vec<(u32, Entry)> {
         }));
 
     }
-    for (_, i) in &names{
-        println!("VEC {:?}", i.text);
-
-    }
     names
-
 }
 
 pub fn load_journal(conn: &Connection, migration_id: u32) -> Vec<(u32, Entry)> {
