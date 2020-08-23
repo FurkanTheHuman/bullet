@@ -10,7 +10,7 @@ pub enum Priority {
 
 pub enum State {
     Completed,
-    OnBoard,
+    Active,
     Discarded,
 }
 
@@ -29,7 +29,7 @@ impl fmt::Display for State {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self {
             State::Completed => write!(f, "Completed"),
-            State::OnBoard => write!(f, "OnBoard"),
+            State::Active => write!(f, "Active"),
             State::Discarded => write!(f, "Discarded"),
         }
     }
@@ -47,7 +47,7 @@ impl ConvertEnum for String {
     fn convert_to_state(&self) -> Option<Self::Item> {
         match &self[..].to_lowercase().trim()[..] {
             "completed" => Some(State::Completed),
-            "onboard" => Some(State::OnBoard),
+            "active" => Some(State::Active),
             "discarded" => Some(State::Discarded),
             _ => None,
         }
@@ -206,7 +206,7 @@ pub fn add_entry(conn: &Connection, msg: String, priority: String, id: u32) {
     if let Some(_n) = priority.convert_to_priority() {
         conn.execute(
             "INSERT INTO Journal (text, state, priority, migration) VALUES (?1, ?2 ,?3, ?4)",
-            params![msg, "OnBoard", priority, id],
+            params![msg, "active", priority, id],
         )
         .expect("Error writing to DB");
         return;

@@ -17,16 +17,16 @@ struct Entry {
 /*
     * bullet --head  -> displays shell header
     * bullet list -> list current bullets (with priority and state)
-    * bullet add -m "Kill the old gods" -p keter -> add new entry state is by default OnBoard
+    * bullet add -m "Kill the old gods" -p keter -> add new entry state is by default active
     * bullet delete 5 -> kill entry with procedure id 5
     * bullet discard 5 -> discard entry with procedure id 5
     * bullet complete 5
-    * bullet onboard 5
+    * bullet activate 5
     * bullet priority 5 euclid
     bullet migrate -> remove the completed, discarded and safe entries. Start the new circle
 
 
-    NOTE: Might change "onboard" with "active"
+    NOTE: Might change "active" with "active"
 
 */
 /*
@@ -112,7 +112,7 @@ fn main() -> Result<()> {
                 .arg(Arg::new("id")
                     .takes_value(true)
                     .about("Id of bullet to complete").required(true)))  
-        .subcommand(App::new("onboard")
+        .subcommand(App::new("activate")
                 .about("Activate bullet from the list")
                 .arg(Arg::new("id")
                     .takes_value(true)
@@ -161,10 +161,10 @@ fn main() -> Result<()> {
             );
             println!("Completed {}", id.value_of("id").unwrap())
         }
-        ("onboard", Some(id)) => {
+        ("active", Some(id)) => {
             storage::change_state(
                 &conn,
-                storage::State::OnBoard,
+                storage::State::Active,
                 id.value_of("id").unwrap().parse::<u32>().unwrap(),
             );
             println!("Activated {}", id.value_of("id").unwrap())
@@ -175,9 +175,7 @@ fn main() -> Result<()> {
             println!("Migration {} active", migration_id);
         },
 
-        (t, _) => println!("None {}::", t), /*"discard" => ,
-                                            "update" => ,
-                                            "migrate" => ,*/
+        (_, _) => list_bullets(&conn, migration_id), 
     }
 
     /* let entry =Entry{
