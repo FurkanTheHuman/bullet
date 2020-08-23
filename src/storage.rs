@@ -202,17 +202,17 @@ pub fn migrate(conn: &Connection, id: u32) -> u32{
     id+1
 }
 
-pub fn add_entry(conn: &Connection, msg: String, priority: String, id: u32) {
+pub fn add_entry(conn: &Connection, msg: String, priority: String, id: u32) -> bool {
     if let Some(_n) = priority.convert_to_priority() {
         conn.execute(
             "INSERT INTO Journal (text, state, priority, migration) VALUES (?1, ?2 ,?3, ?4)",
             params![msg, "active", priority, id],
         )
         .expect("Error writing to DB");
-        return;
+        return true;
     }
-
-    panic!("FUCK");
+    println!("Priority name is not valid. Valid values are {}, {}, {}", Priority::Safe, Priority::Euclid,Priority::Keter);
+    false
 }
 
 pub fn delete_entry(conn: &Connection, proc_id: u32) -> bool {
@@ -230,6 +230,34 @@ pub fn change_state(conn: &Connection, state: State, proc_id: u32) {
         proc_id
     );
     conn.execute(&query[..], params![]).unwrap();
+}
+
+pub fn print_all(conn: &Connection) -> Vec<(u32, Entry)> {
+    let mut stmt = conn.prepare("SELECT id, text, state, priority FROM Journal ORDER BY id DESC").unwrap();
+    let mut rows = stmt.query(params![]).unwrap();
+
+    let mut names: Vec<(u32, Entry)> = Vec::new();
+    while let Some(row) = rows.next().unwrap(){
+        names.push((row.get(0).unwrap(), 
+            Entry{
+                text: row.get(1).unwrap(), 
+                state: match row.get(2).unwrap_or("Err".to_string()).convert_to_state(){
+                    Some(n) => n,
+                    None => panic!("DB Error")
+                },
+                priority: match row.get(3).unwrap_or("Err".to_string()).convert_to_priority(){
+                    Some(n) => n,
+                    None => panic!("DB Error")
+                }
+        }));
+
+    }
+    for (_, i) in &names{
+        println!("VEC {:?}", i.text);
+
+    }
+    names
+
 }
 
 pub fn load_journal(conn: &Connection, migration_id: u32) -> Vec<(u32, Entry)> {

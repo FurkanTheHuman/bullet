@@ -60,8 +60,29 @@ fn list_bullets(conn: &Connection, id: u32) {
     }
 }
 
+fn list_all_bullets(entries: Vec<(u32, storage::Entry)>) {
+    for (id, entry) in entries {
+        let priority = entry.priority.to_string().yellow();
+        let state;
+        if entry.state.to_string().to_lowercase() == "discarded" {
+            state = entry.state.to_string().truecolor(128, 128, 128);
+        } else {
+            state = entry.state.to_string().bright_green();
+        }
+        let msg;
+        if entry.priority.to_string().to_lowercase() == "keter" {
+            msg = entry.text.bright_red();
+        } else {
+            msg = entry.text.bright_blue();
+        }
+        println!("PROC-{} [{}]/[{}] \n\t {}\n", id, state, priority, msg);
+    }
+}
+
 fn add_bullet(conn: &Connection, msg: &str, priority: &str, id:u32) {
-    storage::add_entry(&conn, msg.to_string(), priority.to_string(), id);
+    if !storage::add_entry(&conn, msg.to_string(), priority.to_string(), id){
+        exit(1);
+    }
 }
 
 fn delete_bullet(conn: &Connection, proc_id: u32) {
@@ -84,6 +105,7 @@ fn main() -> Result<()> {
         .author("Furkan A. <aksoyfurkan45@gmail.com>")
         .about("Simple bullet list")
         .arg( Arg::new("head").about("Prints console header").takes_value(false).long("--head"))
+        .arg( Arg::with_name("all").about("Print all entry in reverse order (bullet -a | less)").takes_value(false).long("--all").short('a'))
         .subcommand(
             App::new("list")
                     .about("List current bullets"))
@@ -128,14 +150,21 @@ fn main() -> Result<()> {
         exit(0);
     }
 
+
+    if matches.is_present("all") {
+        let data = storage::print_all(&conn);
+        list_all_bullets( data);
+        exit(0);
+    }
+    
     match matches.subcommand() {
         ("list", Some(_)) => list_bullets(&conn, migration_id),
-        ("add", Some(add_matches)) => add_bullet(
+        ("add", Some(add_matches)) => {add_bullet(
             &conn,
             add_matches.value_of("text").unwrap(),
             add_matches.value_of("priority").unwrap_or("Euclid"),
             migration_id
-        ),
+        )},
         ("delete", Some(delete_matches)) => delete_bullet(
             &conn,
             delete_matches
