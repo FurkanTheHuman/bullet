@@ -34,5 +34,7 @@ First install sqlite3 to your system. Then
 
 `sudo cp target/release/bullet /usr/bin/bullet`
 
+For terminal header add `/usr/bin/bullet --head` to your 
+.bashrc
 
 
