@@ -1,5 +1,8 @@
 use rusqlite::{params, Connection, Error};
 use std::fmt;
+use std::env;
+use std::path::PathBuf;
+
 //use base64;
 
 pub enum Priority {
@@ -115,7 +118,12 @@ fn prepare_migrations(conn: &Connection) -> u32{
 }
 
 pub fn init_connection() -> (Connection, u32) {
-    let connection = Connection::open("/home/foucault/.config/bullet.sql").unwrap();
+    let path = match env::var_os("HOME") {
+        Some(p) => PathBuf::from(p),
+        None => panic!("$HOME variable is not set")
+    };
+    let path = path.join(".config/bullet.sql");
+    let connection = Connection::open(path).unwrap();
     connection
         .execute(
             "CREATE TABLE IF NOT EXISTS journal (
@@ -198,7 +206,7 @@ pub fn migrate(conn: &Connection, id: u32) -> u32{
             counter = counter +1;
         }
     }
-    
+
     println!("Migrated {} elements", counter);
     id+1
 }
